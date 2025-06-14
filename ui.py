@@ -58,7 +58,6 @@ def generate(prompt, max_new_tokens, temperature, top_k, top_p, multiple):
     prompt = prompt.strip().lower()
     if not prompt:
         prompt = "the"
-
     encoded_prompt = encode(prompt, stoi)
     if not encoded_prompt:
         encoded_prompt = encode("the", stoi)
@@ -68,7 +67,6 @@ def generate(prompt, max_new_tokens, temperature, top_k, top_p, multiple):
 
     for _ in range(num_outputs):
         input_ids = torch.tensor([encoded_prompt], dtype=torch.long).to(device)
-
         for _ in range(max_new_tokens):
             idx_cond = input_ids[:, -block_size:]
             logits, _ = model(idx_cond)
@@ -103,21 +101,32 @@ def apply_preset(preset_label):
 # === Clear All function ===
 def clear_all():
     return (
-        "",  # prompt
-        "",  # output
-        "⚖️ Balanced",  # preset
-        100,  # max_tokens
-        1.0,  # temperature
-        40,  # top_k
-        0.95,  # top_p
-        False,  # multiple_outputs
-        "🧮 Tokens: 0 | ✍️ Words: 0 | 🔤 Chars: 0",  # stats
-        None  # download link
+        "", "", "⚖️ Balanced", 100, 1.0, 40, 0.95, False,
+        "🧮 Tokens: 0 | ✍️ Words: 0 | 🔤 Chars: 0", None
     )
 
 # === Gradio UI ===
-with gr.Blocks(title="Mini-GPT Text Generator") as interface:
-    gr.Markdown("### 🤖 Mini-GPT Text Generator")
+with gr.Blocks(title="Mini-GPT Text Generator", theme=gr.themes.Base()) as interface:
+    # Custom CSS for dark mode toggle support
+    gr.HTML("""
+    <style>
+        html.dark body {
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+        }
+        html.dark input, html.dark textarea, html.dark select {
+            background-color: #2e2e2e;
+            color: #fff;
+            border: 1px solid #555;
+        }
+        html.dark .gr-button {
+            background-color: #444 !important;
+            color: #fff !important;
+        }
+    </style>
+    """)
+
+    gr.Markdown("## 🤖 Mini-GPT Text Generator with Advanced UI")
 
     with gr.Row():
         with gr.Column():
@@ -133,8 +142,9 @@ with gr.Blocks(title="Mini-GPT Text Generator") as interface:
             top_k = gr.Slider(0, 100, value=40, step=1, label="Top-k (0 = disabled)")
             top_p = gr.Slider(0.5, 1.0, value=0.95, step=0.01, label="Top-p (1.0 = disabled)")
             multiple_outputs = gr.Checkbox(label="Generate 3 outputs")
-            submit_btn = gr.Button("Submit", variant="primary")
+            submit_btn = gr.Button("▶️ Submit", variant="primary")
             clear_btn = gr.Button("🗑️ Clear All")
+            theme_toggle = gr.Button("🌓 Toggle Theme")
 
         with gr.Column():
             output = gr.Textbox(label="Output", lines=15)
@@ -145,11 +155,10 @@ with gr.Blocks(title="Mini-GPT Text Generator") as interface:
     # Events
     preset_choice.change(fn=apply_preset, inputs=preset_choice, outputs=[temperature, top_k, top_p])
     submit_btn.click(fn=generate, inputs=[prompt, max_tokens, temperature, top_k, top_p, multiple_outputs], outputs=output)
-    clear_btn.click(
-        fn=clear_all,
-        inputs=[],
-        outputs=[prompt, output, preset_choice, max_tokens, temperature, top_k, top_p, multiple_outputs, stats, download_link]
-    )
+    clear_btn.click(fn=clear_all, inputs=[], outputs=[
+        prompt, output, preset_choice, max_tokens, temperature, top_k, top_p,
+        multiple_outputs, stats, download_link
+    ])
     copy_btn.click(
         None,
         inputs=[],
@@ -157,5 +166,16 @@ with gr.Blocks(title="Mini-GPT Text Generator") as interface:
         js="() => { navigator.clipboard.writeText(document.querySelector('textarea[aria-label=Output]').value); }"
     )
     save_btn.click(fn=save_output, inputs=output, outputs=download_link)
+    theme_toggle.click(
+        None,
+        inputs=[],
+        outputs=[],
+        js="""
+        () => {
+            const html = document.querySelector('html');
+            html.classList.toggle('dark');
+        }
+        """
+    )
 
 interface.launch()
