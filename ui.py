@@ -2,6 +2,7 @@ import torch
 import gradio as gr
 from model import GPT
 from tokenizer import build_vocab, encode, decode
+from deep_translator import GoogleTranslator
 
 # === Config ===
 block_size = 8
@@ -53,8 +54,8 @@ def get_prompt_stats(prompt):
     char_count = len(prompt)
     return f"🧮 Tokens: {len(tokens)} | ✍️ Words: {word_count} | 🔤 Chars: {char_count}"
 
-# === Text generation ===
-def generate(prompt, max_new_tokens, temperature, top_k, top_p, multiple):
+# === Text generation with translation ===
+def generate(prompt, max_new_tokens, temperature, top_k, top_p, multiple, tgt_lang):
     prompt = prompt.strip().lower()
     if not prompt:
         prompt = "the"
@@ -82,9 +83,22 @@ def generate(prompt, max_new_tokens, temperature, top_k, top_p, multiple):
 
             input_ids = torch.cat((input_ids, next_id), dim=1)
 
-        results.append(decode(input_ids[0].tolist(), itos))
+        text_out = decode(input_ids[0].tolist(), itos)
+        results.append(text_out)
 
-    return "\n\n---\n\n".join(results)
+    original_text = "\n\n---\n\n".join(results)
+
+    # Translate output
+    if tgt_lang and tgt_lang != "en":
+        try:
+            translator = GoogleTranslator(source='auto', target=tgt_lang)
+            translated_text = translator.translate(original_text)
+        except Exception as e:
+            translated_text = f"[Translation Error]: {e}"
+    else:
+        translated_text = ""
+
+    return original_text, translated_text
 
 # === Save Output to file ===
 def save_output(text):
@@ -101,81 +115,56 @@ def apply_preset(preset_label):
 # === Clear All function ===
 def clear_all():
     return (
-        "", "", "⚖️ Balanced", 100, 1.0, 40, 0.95, False,
-        "🧮 Tokens: 0 | ✍️ Words: 0 | 🔤 Chars: 0", None
+        "", "", "⚖️ Balanced", 100, 1.0, 40, 0.95, False, "en",
+        "🧮 Tokens: 0 | ✍️ Words: 0 | 🔤 Chars: 0", "", None
     )
 
 # === Gradio UI ===
-with gr.Blocks(title="Mini-GPT Text Generator", theme=gr.themes.Base()) as interface:
-    # Custom CSS for dark mode toggle support
-    gr.HTML("""
-    <style>
-        html.dark body {
-            background-color: #1e1e1e;
-            color: #e0e0e0;
-        }
-        html.dark input, html.dark textarea, html.dark select {
-            background-color: #2e2e2e;
-            color: #fff;
-            border: 1px solid #555;
-        }
-        html.dark .gr-button {
-            background-color: #444 !important;
-            color: #fff !important;
-        }
-    </style>
-    """)
-
-    gr.Markdown("## 🤖 Mini-GPT Text Generator with Advanced UI")
+with gr.Blocks(title="Mini-GPT Text Generator with Translation") as interface:
+    gr.Markdown("## 🤖 Mini-GPT Text Generator with Translation")
 
     with gr.Row():
         with gr.Column():
-            preset_choice = gr.Dropdown(
-                choices=list(presets.keys()), value="⚖️ Balanced", label="Sampling Preset"
-            )
-            prompt = gr.Textbox(lines=2, label="Prompt", placeholder="Enter your prompt here...")
+            preset_choice = gr.Dropdown(choices=list(presets.keys()), value="⚖️ Balanced", label="Sampling Preset")
+            prompt = gr.Textbox(lines=2, label="📝 Prompt", placeholder="Type something...")
             stats = gr.Markdown("🧮 Tokens: 0 | ✍️ Words: 0 | 🔤 Chars: 0")
             prompt.change(fn=get_prompt_stats, inputs=prompt, outputs=stats)
 
-            max_tokens = gr.Slider(10, 200, value=100, step=1, label="Max New Tokens")
-            temperature = gr.Slider(0.5, 1.5, value=1.0, step=0.1, label="Temperature")
-            top_k = gr.Slider(0, 100, value=40, step=1, label="Top-k (0 = disabled)")
-            top_p = gr.Slider(0.5, 1.0, value=0.95, step=0.01, label="Top-p (1.0 = disabled)")
-            multiple_outputs = gr.Checkbox(label="Generate 3 outputs")
-            submit_btn = gr.Button("▶️ Submit", variant="primary")
-            clear_btn = gr.Button("🗑️ Clear All")
-            theme_toggle = gr.Button("🌓 Toggle Theme")
+            max_tokens = gr.Slider(10, 200, value=100, step=1, label="🔢 Max Tokens")
+            temperature = gr.Slider(0.5, 1.5, value=1.0, step=0.1, label="🌡️ Temperature")
+            top_k = gr.Slider(0, 100, value=40, step=1, label="🔝 Top-k")
+            top_p = gr.Slider(0.5, 1.0, value=0.95, step=0.01, label="🎯 Top-p")
+            multiple_outputs = gr.Checkbox(label="🧠 Generate 3 outputs")
+
+            lang_choices = {
+                "English": "en",
+                "Spanish": "es",
+                "French": "fr",
+                "German": "de",
+                "Russian": "ru",
+                "Chinese (Simplified)": "zh-CN",
+                "Arabic": "ar",
+                "Japanese": "ja",
+            }
+            tgt_lang = gr.Dropdown(choices=list(lang_choices.values()), value="en", label="Translate Output To")
+
+            submit_btn = gr.Button("🚀 Generate", variant="primary")
+            clear_btn = gr.Button("🗑️ Clear All", variant="secondary")
 
         with gr.Column():
-            output = gr.Textbox(label="Output", lines=15)
-            copy_btn = gr.Button("📋 Copy to Clipboard")
-            save_btn = gr.Button("💾 Save Output")
-            download_link = gr.File(label="Download Output")
+            output = gr.Textbox(label="🧾 Original Output", lines=10)
+            translated_output = gr.Textbox(label="🌍 Translated Output", lines=10)
+            copy_btn = gr.Button("📋 Copy Original", variant="secondary")
+            copy_trans_btn = gr.Button("📋 Copy Translated", variant="secondary")
+            save_btn = gr.Button("💾 Save Output", variant="secondary")
+            download_link = gr.File(label="📥 Download File")
 
-    # Events
+    # === Events ===
     preset_choice.change(fn=apply_preset, inputs=preset_choice, outputs=[temperature, top_k, top_p])
-    submit_btn.click(fn=generate, inputs=[prompt, max_tokens, temperature, top_k, top_p, multiple_outputs], outputs=output)
-    clear_btn.click(fn=clear_all, inputs=[], outputs=[
-        prompt, output, preset_choice, max_tokens, temperature, top_k, top_p,
-        multiple_outputs, stats, download_link
-    ])
-    copy_btn.click(
-        None,
-        inputs=[],
-        outputs=[],
-        js="() => { navigator.clipboard.writeText(document.querySelector('textarea[aria-label=Output]').value); }"
-    )
+    submit_btn.click(fn=generate, inputs=[prompt, max_tokens, temperature, top_k, top_p, multiple_outputs, tgt_lang], outputs=[output, translated_output])
+    clear_btn.click(fn=clear_all, inputs=[], outputs=[prompt, output, preset_choice, max_tokens, temperature, top_k, top_p, multiple_outputs, tgt_lang, stats, translated_output, download_link])
+    copy_btn.click(None, inputs=[], outputs=[], js="() => { navigator.clipboard.writeText(document.querySelector('textarea[aria-label=\"🧾 Original Output\"]').value); }")
+    copy_trans_btn.click(None, inputs=[], outputs=[], js="() => { navigator.clipboard.writeText(document.querySelector('textarea[aria-label=\"🌍 Translated Output\"]').value); }")
     save_btn.click(fn=save_output, inputs=output, outputs=download_link)
-    theme_toggle.click(
-        None,
-        inputs=[],
-        outputs=[],
-        js="""
-        () => {
-            const html = document.querySelector('html');
-            html.classList.toggle('dark');
-        }
-        """
-    )
 
 interface.launch()
